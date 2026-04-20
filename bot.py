@@ -14,7 +14,6 @@ GITHUB_REPO = "MarkKomodo/fbhusernames"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
 PORT = int(os.environ.get("PORT", 10000))
 
-# Only these channels can trigger updates
 ALLOWED_CHANNELS = [
     -1001189317946,
     -1001899939123,
@@ -47,7 +46,16 @@ def start_health_server():
 
 # ─── TELEGRAM HANDLER ───
 async def handle_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Handle both regular messages and channel posts
+    # Get chat ID from either regular message or channel post
+    chat = update.effective_chat
+    if not chat:
+        return
+    
+    chat_id = chat.id
+    if chat_id not in ALLOWED_CHANNELS:
+        return  # silently ignore non-allowed chats
+    
+    # Get the message object (works for both groups and channels)
     msg = update.message or update.channel_post
     if not msg:
         return
@@ -56,7 +64,6 @@ async def handle_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text.strip():
         return
     
-    chat_id = update.effective_chat.id
     log(f"Processing message from chat {chat_id}")
     
     payload = {
@@ -65,7 +72,7 @@ async def handle_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "text": text,
             "source": "telegram",
             "chat_id": chat_id,
-            "user": update.effective_user.username or str(update.effective_user.id) if update.effective_user else "channel"
+            "user": update.effective_user.username if update.effective_user else "channel"
         }
     }
     
@@ -93,19 +100,13 @@ async def run_bot():
     
     log("Initializing bot...")
     
-    channel_filter = filters.Chat(chat_id=ALLOWED_CHANNELS)
-    
     app = Application.builder().token(token).build()
     
-    # Regular messages in groups/supergroups
+    # Use filters.Chat to restrict to allowed channels only.
+    # We do NOT use filters.TEXT here because it ignores channel_posts.
+    # The text validation happens inside the handler.
     app.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & channel_filter, 
-        handle_update
-    ))
-    
-    # Channel broadcasts
-    app.add_handler(MessageHandler(
-        filters.UpdateType.CHANNEL_POST & filters.TEXT & channel_filter,
+        filters.Chat(chat_id=ALLOWED_CHANNELS),
         handle_update
     ))
     
@@ -133,8 +134,3 @@ def main():
     except Exception as e:
         log(f"FATAL ERROR: {e}")
         import traceback
-        log(traceback.format_exc())
-        raise
-
-if __name__ == "__main__":
-    main()
