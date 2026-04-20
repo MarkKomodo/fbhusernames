@@ -1,12 +1,14 @@
 import os
 import asyncio
 import aiohttp
+from aiohttp import web
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPO = "MarkKomodo/fbhusernames"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
+PORT = int(os.environ.get("PORT", 10000))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
@@ -39,7 +41,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 err = await resp.text()
                 await update.message.reply_text(f"❌ Error {resp.status}: {err}")
 
-async def main():
+async def health_server():
+    """Tiny HTTP server so Render marks deploy as healthy."""
+    async def hello(request):
+        return web.Response(text="Bot is running")
+    
+    app = web.Application()
+    app.router.add_get("/", hello)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"Health server listening on port {PORT}")
+
+async def run_bot():
     token = os.environ["BOT_TOKEN"]
     app = Application.builder().token(token).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -48,9 +63,12 @@ async def main():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    
-    # Keep running until interrupted
-    await asyncio.Event().wait()
+
+async def main():
+    await asyncio.gather(
+        health_server(),
+        run_bot()
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
