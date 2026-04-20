@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creator Index Widget</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Chakra+Petch:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; background: transparent; }
+
+#creators-root {
+  --primary: #FF6B35;
+  --surface: #1A1A2E;
+  --text: #EAEAEA;
+  --text-dim: #A0A0B0;
+  font-family: 'Chakra Petch', sans-serif;
+  max-width: 100%;
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  overflow: hidden;
+  color: var(--text);
+}
+
+.c-header {
+  padding: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: linear-gradient(to right, rgba(255,107,53,0.1), transparent);
+}
+
+.c-title-area { text-align: left; }
+.c-title-area h3 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.3rem;
+  margin: 0;
+}
+.c-title-area p {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 4px 0 0 0;
+}
+
+.c-badge {
+  background: rgba(255,107,53,0.15);
+  color: var(--primary);
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid rgba(255,107,53,0.3);
+  white-space: nowrap;
+}
+
+.c-scroll-box {
+  height: 350px;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.15);
+  position: relative;
+}
+
+.c-content {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  animation: c-slide linear infinite;
+}
+
+@keyframes c-slide {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+.c-item {
+  text-align: left;
+  padding: 12px 18px;
+  margin-bottom: 10px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 8px;
+  font-size: 1rem;
+  color: var(--text-dim);
+  border-left: 4px solid transparent;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.c-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+  border-left-color: var(--primary);
+  transform: translateX(8px);
+}
+
+.c-loading { padding: 80px 20px; text-align: center; color: var(--text-dim); }
+
+.c-scroll-box::-webkit-scrollbar { width: 4px; }
+.c-scroll-box::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 10px; }
+</style>
+</head>
+<body>
+
+<div id="creators-root">
+  <div class="c-header">
+    <div class="c-title-area">
+      <h3>Content Creator Index</h3>
+      <p>Active community database</p>
+    </div>
+    <div id="c-count" class="c-badge">SYNCING</div>
+  </div>
+  <div class="c-scroll-box" id="c-box">
+    <div id="c-status" class="c-loading">Connecting to database...</div>
+    <div id="c-list" class="c-content" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  // jsDelivr CDN — fast, reliable, proper CORS
+  const URL = "https://cdn.jsdelivr.net/gh/MarkKomodo/fbhusernames@main/database.json";
+
+  const list = document.getElementById('c-list');
+  const status = document.getElementById('c-status');
+  const badge = document.getElementById('c-count');
+
+  function fetchWithTimeout(url, ms = 8000) {
+    return Promise.race([
+      fetch(url),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Request timed out")), ms)
+      )
+    ]);
+  }
+
+  async function init() {
+    try {
+      const req = await fetchWithTimeout(URL + '?t=' + Date.now(), 8000);
+      if (!req.ok) throw new Error("Server returned " + req.status);
+
+      const data = await req.json();
+      const names = data.creators || [];
+      if (names.length === 0) throw new Error("Empty dataset");
+
+      const html = names.map(n => {
+        const safe = document.createElement('div');
+        safe.textContent = n;
+        return `<div class="c-item">${safe.innerHTML}</div>`;
+      }).join('');
+      
+      list.innerHTML = html + html;
+
+      badge.textContent = names.length.toLocaleString() + " INDEXED";
+      status.style.display = 'none';
+      list.style.display = 'flex';
+
+      const duration = Math.max(names.length * 1.5, 30);
+      list.style.animationDuration = duration + 's';
+
+    } catch (e) {
+      status.innerHTML = "Database Offline<br><small>" + e.message + "</small>";
+      badge.textContent = "ERROR";
+      badge.style.background = "rgba(255,0,0,0.2)";
+      badge.style.borderColor = "rgba(255,0,0,0.3)";
+      badge.style.color = "#ff5555";
+    }
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
