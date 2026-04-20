@@ -1,5 +1,4 @@
 import os
-import json
 import asyncio
 import aiohttp
 from telegram import Update
@@ -40,12 +39,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 err = await resp.text()
                 await update.message.reply_text(f"❌ Error {resp.status}: {err}")
 
-def main():
+async def main():
     token = os.environ["BOT_TOKEN"]
     app = Application.builder().token(token).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
     print("Bot is running...")
-    app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    
+    # Keep running until interrupted
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
