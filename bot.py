@@ -2,7 +2,6 @@ import os
 import sys
 import asyncio
 import threading
-import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import aiohttp
@@ -15,11 +14,19 @@ GITHUB_REPO = "MarkKomodo/fbhusernames"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/dispatches"
 PORT = int(os.environ.get("PORT", 10000))
 
+# Only these channels can trigger updates
+ALLOWED_CHANNELS = [
+    -1001189317946,
+    -1001899939123,
+    -1001610106957,
+    -1002119676540,
+]
+
 def log(msg):
     print(msg, flush=True)
     sys.stdout.flush()
 
-# ─── HEALTH SERVER (threading, not asyncio) ───
+# ─── HEALTH SERVER ───
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -28,7 +35,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running")
     
     def log_message(self, format, *args):
-        pass  # suppress default HTTP logging
+        pass
 
 def start_health_server():
     try:
@@ -39,18 +46,26 @@ def start_health_server():
         log(f"Health server failed: {e}")
 
 # ─── TELEGRAM HANDLER ───
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text or update.message.caption or ""
-    if not text.strip():
-        await update.message.reply_text("❌ Empty message.")
+async def handle_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Handle both regular messages and channel posts
+    msg = update.message or update.channel_post
+    if not msg:
         return
+    
+    text = msg.text or msg.caption or ""
+    if not text.strip():
+        return
+    
+    chat_id = update.effective_chat.id
+    log(f"Processing message from chat {chat_id}")
     
     payload = {
         "event_type": "new-creators",
         "client_payload": {
             "text": text,
             "source": "telegram",
-            "user": update.effective_user.username or str(update.effective_user.id)
+            "chat_id": chat_id,
+            "user": update.effective_user.username or str(update.effective_user.id) if update.effective_user else "channel"
         }
     }
     
@@ -64,10 +79,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             json=payload
         ) as resp:
             if resp.status == 204:
-                await update.message.reply_text("✅ Added to index! Refresh Carrd to see updates.")
+                log(f"✅ Triggered GitHub Action for chat {chat_id}")
             else:
                 err = await resp.text()
-                await update.message.reply_text(f"❌ Error {resp.status}: {err}")
+                log(f"❌ GitHub Error {resp.status}: {err}")
 
 # ─── MAIN ───
 async def run_bot():
@@ -77,15 +92,28 @@ async def run_bot():
         return
     
     log("Initializing bot...")
+    
+    channel_filter = filters.Chat(chat_id=ALLOWED_CHANNELS)
+    
     app = Application.builder().token(token).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Regular messages in groups/supergroups
+    app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & channel_filter, 
+        handle_update
+    ))
+    
+    # Channel broadcasts
+    app.add_handler(MessageHandler(
+        filters.UpdateType.CHANNEL_POST & filters.TEXT & channel_filter,
+        handle_update
+    ))
     
     log("Bot is running...")
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
     
-    # Block forever
     stop_event = asyncio.Event()
     await stop_event.wait()
 
@@ -93,15 +121,13 @@ def main():
     try:
         log("=== Starting FBH Telegram Bot ===")
         log(f"PORT={PORT}")
-        log(f"GITHUB_REPO={GITHUB_REPO}")
+        log(f"Monitoring channels: {ALLOWED_CHANNELS}")
         log(f"GITHUB_TOKEN set: {bool(GITHUB_TOKEN)}")
         
-        # Start health server in background thread
         health_thread = threading.Thread(target=start_health_server, daemon=True)
         health_thread.start()
         log("Health server thread started")
         
-        # Run bot in main thread with its own event loop
         asyncio.run(run_bot())
         
     except Exception as e:
