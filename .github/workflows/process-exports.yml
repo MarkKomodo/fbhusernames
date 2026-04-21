@@ -1,0 +1,35 @@
+name: Process Telegram Exports
+
+on:
+  push:
+    paths:
+      - 'exports/**'
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: pip install requests
+          
+      - name: Process export files
+        run: python .github/scripts/process_exports.py
+          
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add database.json exports/
+          git diff --cached --quiet || (git commit -m "Process Telegram exports" && git push)
