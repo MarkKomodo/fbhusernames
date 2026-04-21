@@ -9,6 +9,16 @@ EXPORTS_DIR = "exports"
 DB_PATH = "database.json"
 CACHE_PATH = ".github/scripts/scrape_cache.json"
 
+# ─── VETTED BLOCKLIST: Your own community names only ───
+BLOCKLIST = {
+    "furrybellygifs", "furrybellygifschat",
+    "furrybellyhub",
+    "furrybellyirl", "furrybellyirlchat",
+    "furrybellynsfwc", "furrybellynsfwchat",
+    "furrybellyvr", "furrybellyworship", "furrybellylove",
+    "furryburps", "furryburpschat",
+}
+
 def load_db():
     try:
         with open(DB_PATH, "r", encoding="utf-8") as f:
@@ -48,17 +58,14 @@ def extract_text_from_message(msg):
 
 def extract_urls_and_mentions(text):
     found = []
-    # Raw URLs — exclude ) to avoid markdown trailing paren
     for m in re.finditer(r'https?://[^\s<>"{}|\\^`\[\]()]+', text):
         url = m.group(0).rstrip('.,;:!?>\'\"')
         found.append(("url", url))
-    # Markdown links [text](url)
     for m in re.finditer(r'\[([^\]]*)\]\(([^)]+)\)', text):
         url = m.group(2).strip()
         if url.startswith("http"):
             url = url.rstrip('.,;:!?>\'\"')
             found.append(("url", url))
-    # @mentions
     for m in re.finditer(r'@([a-zA-Z0-9_.]+)', text):
         found.append(("mention", m.group(1)))
     return found
@@ -76,13 +83,16 @@ def clean_name(name):
             name = name[:-len(suffix)]
     if name.startswith("did:plc:"):
         return None
-    # Reject YouTube video IDs (exactly 11 chars of base64)
+    # Vetted blocklist check (strip trailing punctuation for variants like "FurryBellyNSFWC.")
+    if name.lower().rstrip('.,;:!?)') in BLOCKLIST:
+        return None
+    # Reject YouTube video IDs
     if re.fullmatch(r'[A-Za-z0-9_-]{11}', name):
         return None
-    # Reject Instagram shortcodes (10-12 chars with hyphen)
+    # Reject Instagram shortcodes
     if re.fullmatch(r'[A-Za-z0-9\-]{10,12}', name) and '-' in name:
         return None
-    # Reject Twitter tracking tokens: starts with digit or _, mixed case, has digits, <=15 chars
+    # Reject Twitter tracking tokens
     if len(name) <= 15 and (name[0].isdigit() or name[0] == '_'):
         if re.search(r'\d', name) and re.search(r'[A-Z]', name) and re.search(r'[a-z]', name):
             return None
@@ -98,11 +108,9 @@ def extract_from_url(url):
     if domain.startswith("www."):
         domain = domain[4:]
 
-    # Skip Telegram entirely
     if domain in ("t.me", "telegram.me"):
         return None
 
-    # Bluesky + alts
     if domain in ("bsky.app", "bskye.app", "bskyx.app", "cbsky.app",
                   "fxbsky.app", "vxbsky.app", "xbsky.app"):
         m = re.search(r'/profile/([^/?#]+)', path)
@@ -110,7 +118,6 @@ def extract_from_url(url):
             return clean_name(m.group(1))
         return None
 
-    # Twitter/X + alts — ONLY extract username from path, never query params
     if domain in ("twitter.com", "x.com", "nitter.net",
                   "fixupx.com", "fixvx.com", "fxtwitter.com", "girlcockx.com",
                   "mpregx.com", "pxtwitter.com", "stupidpenisx.com",
@@ -120,7 +127,6 @@ def extract_from_url(url):
             return clean_name(parts[0])
         return None
 
-    # TikTok + alts
     if domain in ("tiktok.com", "tiktokez.com", "tiktxk.com", "tnktok.com",
                   "vm.tfxktok.com", "vm.tiktokez.com", "vm.tiktok.com",
                   "www.tnktok.com"):
@@ -134,11 +140,9 @@ def extract_from_url(url):
             return clean_name(parts[0][1:])
         return None
 
-    # YouTube + alts — ONLY scrape, never extract from path/query
     if domain in ("youtube.com", "youtu.be", "koutube.com"):
         return scrape_with_cache(url, "youtube")
 
-    # Instagram + alts — NEVER extract post IDs from /p/ /reel/ /tv/
     if domain in ("instagram.com", "ddinstagram.com", "eeinstagram.com",
                   "kkinstagram.com"):
         parts = [p for p in path.split("/") if p]
@@ -152,7 +156,6 @@ def extract_from_url(url):
             return clean_name(parts[0])
         return scrape_with_cache(url, "instagram")
 
-    # FurAffinity — /user/name only, /view/ scraped
     if domain in ("furaffinity.net", "d.furaffinity.net", "fxfuraffinity.net",
                   "fxrafinity.net", "xfuraffinity.net"):
         parts = [p for p in path.split("/") if p]
@@ -162,7 +165,6 @@ def extract_from_url(url):
             return scrape_with_cache(url, "furaffinity")
         return None
 
-    # Facebook — scrape only
     if domain in ("facebook.com", "facebed.com"):
         return scrape_with_cache(url, "facebook")
 
