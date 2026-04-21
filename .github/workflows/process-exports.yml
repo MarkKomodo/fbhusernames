@@ -24,6 +24,11 @@ jobs:
       - name: Install dependencies
         run: pip install requests
           
+      - name: Reset database for fresh import
+        run: |
+          echo '{"last_updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","creators":[]}' > database.json
+          echo "Database reset"
+          
       - name: Process export files
         run: python .github/scripts/process_exports.py
           
