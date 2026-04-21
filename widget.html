@@ -24,11 +24,15 @@ body { margin: 0; background: transparent; }
 }
 
 .c-header {
-  padding: 24px;
+  padding: 24px 24px 20px 24px;
+  background: linear-gradient(to right, rgba(255,107,53,0.1), transparent);
+}
+
+.c-header-top {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  background: linear-gradient(to right, rgba(255,107,53,0.1), transparent);
+  margin-bottom: 16px;
 }
 
 .c-title-area { text-align: left; }
@@ -54,27 +58,25 @@ body { margin: 0; background: transparent; }
   white-space: nowrap;
 }
 
-/* Search bar */
-.c-search {
-  padding: 0 24px 16px 24px;
-}
+/* Search bar inside header */
 .c-search input {
   width: 100%;
   padding: 10px 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(0,0,0,0.25);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.2);
   color: var(--text);
   font-family: 'Chakra Petch', sans-serif;
   font-size: 0.95rem;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
 .c-search input::placeholder {
   color: var(--text-dim);
 }
 .c-search input:focus {
   border-color: var(--primary);
+  background: rgba(0,0,0,0.3);
 }
 
 .c-scroll-box {
@@ -123,15 +125,16 @@ body { margin: 0; background: transparent; }
 
 <div id="creators-root">
   <div class="c-header">
-    <div class="c-title-area">
-      <h3>Content Creator Index</h3>
-      <p>Active community database</p>
+    <div class="c-header-top">
+      <div class="c-title-area">
+        <h3>Content Creator Index</h3>
+        <p>Active community database</p>
+      </div>
+      <div id="c-count" class="c-badge">SYNCING</div>
     </div>
-    <div id="c-count" class="c-badge">SYNCING</div>
-  </div>
-  
-  <div class="c-search" id="c-search-box" style="display:none">
-    <input type="text" id="c-search-input" placeholder="Search creators...">
+    <div class="c-search" id="c-search-box" style="display:none">
+      <input type="text" id="c-search-input" placeholder="Search creators...">
+    </div>
   </div>
   
   <div class="c-scroll-box" id="c-box">
