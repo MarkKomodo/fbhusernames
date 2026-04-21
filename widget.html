@@ -59,19 +59,16 @@ body { margin: 0; background: transparent; }
   overflow-y: auto;
   background: rgba(0,0,0,0.15);
   position: relative;
+  scroll-behavior: smooth;
 }
 
 .c-content {
   display: flex;
   flex-direction: column;
   padding: 20px;
-  animation: c-slide linear infinite;
 }
 
-@keyframes c-slide {
-  from { transform: translateY(0); }
-  to { transform: translateY(-50%); }
-}
+/* No CSS animation here anymore */
 
 .c-item {
   text-align: left;
@@ -118,6 +115,7 @@ body { margin: 0; background: transparent; }
 (function() {
   const URL = "https://raw.githubusercontent.com/MarkKomodo/fbhusernames/main/database.json";
 
+  const box = document.getElementById('c-box');
   const list = document.getElementById('c-list');
   const status = document.getElementById('c-status');
   const badge = document.getElementById('c-count');
@@ -146,14 +144,14 @@ body { margin: 0; background: transparent; }
         return `<div class="c-item">${safe.innerHTML}</div>`;
       }).join('');
       
+      // Duplicate for seamless looping
       list.innerHTML = html + html;
 
       badge.textContent = names.length.toLocaleString() + " INDEXED";
       status.style.display = 'none';
       list.style.display = 'flex';
 
-      const duration = Math.max(names.length * 1.5, 30);
-      list.style.animationDuration = duration + 's';
+      startAutoScroll();
 
     } catch (e) {
       status.innerHTML = "Database Offline<br><small>" + e.message + "</small>";
@@ -162,6 +160,43 @@ body { margin: 0; background: transparent; }
       badge.style.borderColor = "rgba(255,0,0,0.3)";
       badge.style.color = "#ff5555";
     }
+  }
+
+  function startAutoScroll() {
+    let scrollSpeed = 0.8; // pixels per frame
+    let isPaused = false;
+    let rafId = null;
+
+    function scrollStep() {
+      if (!isPaused) {
+        box.scrollTop += scrollSpeed;
+        // When we reach the bottom of the first copy, snap to top instantly
+        if (box.scrollTop >= list.scrollHeight / 2) {
+          box.scrollTop = 0;
+        }
+      }
+      rafId = requestAnimationFrame(scrollStep);
+    }
+
+    rafId = requestAnimationFrame(scrollStep);
+
+    // Pause on mouse enter / touch start
+    box.addEventListener('mouseenter', () => { isPaused = true; });
+    box.addEventListener('touchstart', () => { isPaused = true; }, { passive: true });
+
+    // Resume on mouse leave
+    box.addEventListener('mouseleave', () => { isPaused = false; });
+    box.addEventListener('touchend', () => { isPaused = false; });
+
+    // Also pause while user is actively scrolling with wheel/trackpad
+    let scrollTimeout;
+    box.addEventListener('scroll', () => {
+      isPaused = true;
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        isPaused = false;
+      }, 1500); // resume 1.5s after last scroll
+    }, { passive: true });
   }
 
   init();
