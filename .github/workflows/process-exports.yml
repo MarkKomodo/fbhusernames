@@ -1,10 +1,7 @@
 name: Process Telegram Exports
 
 on:
-  push:
-    paths:
-      - 'exports/**'
-  workflow_dispatch:
+  workflow_dispatch:  # Only runs when you click the button
 
 jobs:
   process:
