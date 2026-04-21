@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote, quote
 
 # ─── PATHS ───
+EXPORTS_DIR = "exports"
 DB_PATH = "database.json"
 CACHE_PATH = ".github/scripts/scrape_cache.json"
 
@@ -43,27 +44,36 @@ def save_cache(cache):
         json.dump(cache, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
+# ─── TELEGRAM JSON PARSING ───
+def extract_text_from_message(msg):
+    """Flatten Telegram's text field (string or array of entities) into plain text."""
+    text = msg.get("text", "")
+    if isinstance(text, list):
+        parts = []
+        for item in text:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(item.get("text", ""))
+        return "".join(parts)
+    return text if isinstance(text, str) else ""
+
 # ─── EXTRACTION ───
 def extract_urls_and_mentions(text):
-    """Only grab https links, markdown link URLs, and @mentions."""
     found = []
-
     # Raw URLs
     for m in re.finditer(r'https?://[^\s<>"{}|\\^`\[\]]+', text):
         url = m.group(0).rstrip('.,;:!?)>\'\"')
         found.append(("url", url))
-
     # Markdown links [text](url)
     for m in re.finditer(r'\[([^\]]*)\]\(([^)]+)\)', text):
         url = m.group(2).strip()
         if url.startswith("http"):
             url = url.rstrip('.,;:!?)>\'\"')
             found.append(("url", url))
-
     # @mentions
     for m in re.finditer(r'@([a-zA-Z0-9_.]+)', text):
         found.append(("mention", m.group(1)))
-
     return found
 
 # ─── URL PARSING ───
@@ -79,14 +89,14 @@ def extract_from_url(url):
     if domain in ("t.me", "telegram.me"):
         return None
 
-    # Bluesky + alt proxies
+    # Bluesky + alts
     if domain in ("bsky.app", "bskye.app", "bskyx.app", "cbsky.app",
                   "fxbsky.app", "vxbsky.app", "xbsky.app"):
         m = re.search(r'/profile/([^/?#]+)', path)
         if m:
             return clean_name(m.group(1))
 
-    # Twitter/X + alt proxies
+    # Twitter/X + alts
     if domain in ("twitter.com", "x.com", "nitter.net",
                   "fixupx.com", "fixvx.com", "fxtwitter.com", "girlcockx.com",
                   "mpregx.com", "pxtwitter.com", "stupidpenisx.com",
@@ -95,7 +105,7 @@ def extract_from_url(url):
         if parts and parts[0] not in ("i", "home", "search", "explore", "intent"):
             return clean_name(parts[0])
 
-    # TikTok + alt proxies (username usually in URL path)
+    # TikTok + alts
     if domain in ("tiktok.com", "tiktokez.com", "tiktxk.com", "tnktok.com",
                   "vm.tfxktok.com", "vm.tiktokez.com", "vm.tiktok.com",
                   "www.tnktok.com"):
@@ -283,33 +293,56 @@ def merge_creators(existing, new_names):
 
 # ─── MAIN ───
 def main():
-    payload_raw = os.environ.get("RAW_PAYLOAD", "{}")
-    try:
-        payload = json.loads(payload_raw)
-    except json.JSONDecodeError:
-        payload = {}
-
-    raw_text = payload.get("text", "")
-    if not raw_text:
-        print("No text payload received. Exiting.")
-        return
-
-    print(f"Received payload with {len(raw_text)} chars")
-
     db = load_db()
     existing = db.get("creators", [])
-    print(f"Existing creators: {len(existing)}")
-
     extracted = set()
-    for kind, value in extract_urls_and_mentions(raw_text):
-        if kind == "mention":
-            cleaned = clean_name(value)
-            if cleaned:
-                extracted.add(cleaned)
-        elif kind == "url":
-            cleaned = extract_from_url(value)
-            if cleaned:
-                extracted.add(cleaned)
+    processed_files = []
+
+    if not os.path.exists(EXPORTS_DIR):
+        print("No exports folder found.")
+        return
+
+    files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith('.json')]
+    if not files:
+        print("No JSON files to process.")
+        return
+
+    for filename in files:
+        filepath = os.path.join(EXPORTS_DIR, filename)
+        print(f"Processing {filename}...")
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            print(f"  Skipping {filename}: invalid JSON")
+            continue
+
+        messages = data.get("messages", [])
+        count = 0
+        
+        for msg in messages:
+            if msg.get("type") != "message":
+                continue
+            
+            text = extract_text_from_message(msg)
+            if not text.strip():
+                continue
+            
+            for kind, value in extract_urls_and_mentions(text):
+                if kind == "mention":
+                    cleaned = clean_name(value)
+                    if cleaned:
+                        extracted.add(cleaned)
+                elif kind == "url":
+                    cleaned = extract_from_url(value)
+                    if cleaned:
+                        extracted.add(cleaned)
+            
+            count += 1
+        
+        print(f"  Scanned {count} messages")
+        processed_files.append(filepath)
 
     print(f"Extracted {len(extracted)} new candidates")
 
@@ -318,7 +351,11 @@ def main():
 
     db["creators"] = merged
     save_db(db)
-    print("Database updated successfully.")
+
+    # Delete processed files to keep exports/ clean
+    for filepath in processed_files:
+        os.remove(filepath)
+        print(f"Deleted {os.path.basename(filepath)}")
 
 if __name__ == "__main__":
     main()
