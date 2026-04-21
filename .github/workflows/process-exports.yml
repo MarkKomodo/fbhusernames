@@ -1,7 +1,7 @@
 name: Process Telegram Exports
 
 on:
-  workflow_dispatch:  # Only runs when you click the button
+  workflow_dispatch:
 
 jobs:
   process:
@@ -19,19 +19,59 @@ jobs:
           python-version: '3.11'
           
       - name: Install dependencies
-        run: pip install requests
+        run: |
+          echo "=== Installing Python dependencies ==="
+          pip install requests
+          echo "=== Done ==="
+          
+      - name: Show files before processing
+        run: |
+          echo "=== FILES IN REPO ROOT ==="
+          ls -la
+          echo ""
+          echo "=== FILES IN EXPORTS/ ==="
+          ls -la exports/ || echo "exports/ folder missing or empty"
+          echo ""
+          echo "=== CURRENT DATABASE SIZE ==="
+          wc -c database.json || echo "database.json missing"
+          echo ""
+          echo "=== CURRENT DATABASE PREVIEW ==="
+          cat database.json | head -20
           
       - name: Reset database for fresh import
         run: |
+          echo "=== RESETTING DATABASE ==="
           echo '{"last_updated":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'","creators":[]}' > database.json
-          echo "Database reset"
+          echo "Database reset to empty"
+          cat database.json
           
       - name: Process export files
-        run: python .github/scripts/process_exports.py
+        run: |
+          echo "=== STARTING PYTHON PROCESSOR ==="
+          python .github/scripts/process_exports.py
+          echo "=== PYTHON PROCESSOR FINISHED ==="
+          
+      - name: Show files after processing
+        run: |
+          echo "=== FILES IN EXPORTS/ AFTER PROCESSING ==="
+          ls -la exports/ || echo "exports/ folder missing or empty"
+          echo ""
+          echo "=== NEW DATABASE SIZE ==="
+          wc -c database.json
+          echo ""
+          echo "=== NEW DATABASE PREVIEW (first 50 lines) ==="
+          cat database.json | head -50
+          echo ""
+          echo "=== CREATOR COUNT ==="
+          python -c "import json; d=json.load(open('database.json')); print(f'Total creators: {len(d.get(\"creators\", []))}')"
           
       - name: Commit and push
         run: |
+          echo "=== GIT STATUS ==="
+          git status
+          echo ""
+          echo "=== ATTEMPTING COMMIT ==="
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add database.json exports/
-          git diff --cached --quiet || (git commit -m "Process Telegram exports" && git push)
+          git diff --cached --quiet && echo "No changes to commit" || (git commit -m "Process Telegram exports" && git push && echo "Committed and pushed successfully")
