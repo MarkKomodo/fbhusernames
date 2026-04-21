@@ -397,4 +397,11 @@ def main():
     log(f"\n[CLEANUP] Deleting {len(processed_files)} processed file(s)...")
     for filepath in processed_files:
         os.remove(filepath)
-        log(f"  Deleted: {os.path.basename(filepath
+        log(f"  Deleted: {os.path.basename(filepath)}")
+
+    log("\n" + "=" * 60)
+    log("PROCESSING COMPLETE")
+    log("=" * 60)
+
+if __name__ == "__main__":
+    main()
