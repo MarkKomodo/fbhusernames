@@ -14,6 +14,7 @@ body { margin: 0; background: transparent; }
   --surface: #1A1A2E;
   --text: #EAEAEA;
   --text-dim: #A0A0B0;
+  --accent: #FFD93D;
   font-family: 'Chakra Petch', sans-serif;
   max-width: 100%;
   background: var(--surface);
@@ -48,17 +49,16 @@ body { margin: 0; background: transparent; }
 }
 
 .c-badge {
-  background: rgba(255,107,53,0.15);
-  color: var(--primary);
+  background: rgba(255, 217, 61, 0.15);
+  color: var(--accent);
   padding: 6px 14px;
   border-radius: 99px;
   font-size: 0.7rem;
   font-weight: 700;
-  border: 1px solid rgba(255,107,53,0.3);
+  border: 1px solid rgba(255, 217, 61, 0.3);
   white-space: nowrap;
 }
 
-/* Search bar inside header */
 .c-search input {
   width: 100%;
   padding: 10px 16px;
@@ -147,7 +147,6 @@ body { margin: 0; background: transparent; }
 (function() {
   const URL = "https://raw.githubusercontent.com/MarkKomodo/fbhusernames/main/database.json";
 
-  const box = document.getElementById('c-box');
   const list = document.getElementById('c-list');
   const status = document.getElementById('c-status');
   const badge = document.getElementById('c-count');
