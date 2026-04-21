@@ -9,7 +9,6 @@ EXPORTS_DIR = "exports"
 DB_PATH = "database.json"
 CACHE_PATH = ".github/scripts/scrape_cache.json"
 
-# ─── VETTED BLOCKLIST: Your own community names only ───
 BLOCKLIST = {
     "furrybellygifs", "furrybellygifschat",
     "furrybellyhub",
@@ -58,14 +57,17 @@ def extract_text_from_message(msg):
 
 def extract_urls_and_mentions(text):
     found = []
+    # Raw URLs — stop at ) to avoid markdown trailing paren
     for m in re.finditer(r'https?://[^\s<>"{}|\\^`\[\]()]+', text):
         url = m.group(0).rstrip('.,;:!?>\'\"')
         found.append(("url", url))
+    # Markdown links [text](url)
     for m in re.finditer(r'\[([^\]]*)\]\(([^)]+)\)', text):
         url = m.group(2).strip()
         if url.startswith("http"):
             url = url.rstrip('.,;:!?>\'\"')
             found.append(("url", url))
+    # @mentions
     for m in re.finditer(r'@([a-zA-Z0-9_.]+)', text):
         found.append(("mention", m.group(1)))
     return found
@@ -76,26 +78,18 @@ def clean_name(name):
     name = name.strip()
     if name.startswith("@"):
         name = name[1:]
-    if "?" in name:
-        name = name.split("?")[0]
+    # Safety: drop anything after ? or # (shouldn't happen, but just in case)
+    name = name.split("?")[0].split("#")[0]
+    # Strip Bluesky suffixes
     for suffix in (".bsky.social", ".wobbl.xyz.ap.brid.gy"):
         if name.lower().endswith(suffix):
             name = name[:-len(suffix)]
+    # Reject Bluesky DIDs
     if name.startswith("did:plc:"):
         return None
-    # Vetted blocklist check (strip trailing punctuation for variants like "FurryBellyNSFWC.")
+    # Reject your community names (strip trailing punctuation for variants)
     if name.lower().rstrip('.,;:!?)') in BLOCKLIST:
         return None
-    # Reject YouTube video IDs
-    if re.fullmatch(r'[A-Za-z0-9_-]{11}', name):
-        return None
-    # Reject Instagram shortcodes
-    if re.fullmatch(r'[A-Za-z0-9\-]{10,12}', name) and '-' in name:
-        return None
-    # Reject Twitter tracking tokens
-    if len(name) <= 15 and (name[0].isdigit() or name[0] == '_'):
-        if re.search(r'\d', name) and re.search(r'[A-Z]', name) and re.search(r'[a-z]', name):
-            return None
     name = name.strip('/@#_')
     if len(name) < 2 or len(name) > 40:
         return None
@@ -105,12 +99,16 @@ def extract_from_url(url):
     parsed = urlparse(url)
     domain = parsed.netloc.lower()
     path = unquote(parsed.path)
+    # We explicitly ignore parsed.query and parsed.fragment
+
     if domain.startswith("www."):
         domain = domain[4:]
 
+    # Skip Telegram
     if domain in ("t.me", "telegram.me"):
         return None
 
+    # Bluesky + alts — username is in /profile/NAME
     if domain in ("bsky.app", "bskye.app", "bskyx.app", "cbsky.app",
                   "fxbsky.app", "vxbsky.app", "xbsky.app"):
         m = re.search(r'/profile/([^/?#]+)', path)
@@ -118,6 +116,7 @@ def extract_from_url(url):
             return clean_name(m.group(1))
         return None
 
+    # Twitter/X + alts — username is first path segment
     if domain in ("twitter.com", "x.com", "nitter.net",
                   "fixupx.com", "fixvx.com", "fxtwitter.com", "girlcockx.com",
                   "mpregx.com", "pxtwitter.com", "stupidpenisx.com",
@@ -127,6 +126,7 @@ def extract_from_url(url):
             return clean_name(parts[0])
         return None
 
+    # TikTok + alts — username in /@NAME or path
     if domain in ("tiktok.com", "tiktokez.com", "tiktxk.com", "tnktok.com",
                   "vm.tfxktok.com", "vm.tiktokez.com", "vm.tiktok.com",
                   "www.tnktok.com"):
@@ -140,9 +140,11 @@ def extract_from_url(url):
             return clean_name(parts[0][1:])
         return None
 
+    # YouTube + alts — ONLY scrape, never extract from path
     if domain in ("youtube.com", "youtu.be", "koutube.com"):
         return scrape_with_cache(url, "youtube")
 
+    # Instagram + alts — /p/, /reel/ scraped; /stories/USER or /USER used directly
     if domain in ("instagram.com", "ddinstagram.com", "eeinstagram.com",
                   "kkinstagram.com"):
         parts = [p for p in path.split("/") if p]
@@ -156,6 +158,7 @@ def extract_from_url(url):
             return clean_name(parts[0])
         return scrape_with_cache(url, "instagram")
 
+    # FurAffinity — /user/NAME directly; /view/ scraped
     if domain in ("furaffinity.net", "d.furaffinity.net", "fxfuraffinity.net",
                   "fxrafinity.net", "xfuraffinity.net"):
         parts = [p for p in path.split("/") if p]
@@ -165,6 +168,7 @@ def extract_from_url(url):
             return scrape_with_cache(url, "furaffinity")
         return None
 
+    # Facebook — scrape only
     if domain in ("facebook.com", "facebed.com"):
         return scrape_with_cache(url, "facebook")
 
