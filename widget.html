@@ -54,12 +54,34 @@ body { margin: 0; background: transparent; }
   white-space: nowrap;
 }
 
+/* Search bar */
+.c-search {
+  padding: 0 24px 16px 24px;
+}
+.c-search input {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.c-search input::placeholder {
+  color: var(--text-dim);
+}
+.c-search input:focus {
+  border-color: var(--primary);
+}
+
 .c-scroll-box {
   height: 350px;
   overflow-y: auto;
   background: rgba(0,0,0,0.15);
   position: relative;
-  scroll-behavior: smooth;
 }
 
 .c-content {
@@ -67,8 +89,6 @@ body { margin: 0; background: transparent; }
   flex-direction: column;
   padding: 20px;
 }
-
-/* No CSS animation here anymore */
 
 .c-item {
   text-align: left;
@@ -89,6 +109,10 @@ body { margin: 0; background: transparent; }
   transform: translateX(8px);
 }
 
+.c-item.hidden {
+  display: none;
+}
+
 .c-loading { padding: 80px 20px; text-align: center; color: var(--text-dim); }
 
 .c-scroll-box::-webkit-scrollbar { width: 4px; }
@@ -105,6 +129,11 @@ body { margin: 0; background: transparent; }
     </div>
     <div id="c-count" class="c-badge">SYNCING</div>
   </div>
+  
+  <div class="c-search" id="c-search-box" style="display:none">
+    <input type="text" id="c-search-input" placeholder="Search creators...">
+  </div>
+  
   <div class="c-scroll-box" id="c-box">
     <div id="c-status" class="c-loading">Connecting to database...</div>
     <div id="c-list" class="c-content" style="display:none"></div>
@@ -119,6 +148,8 @@ body { margin: 0; background: transparent; }
   const list = document.getElementById('c-list');
   const status = document.getElementById('c-status');
   const badge = document.getElementById('c-count');
+  const searchBox = document.getElementById('c-search-box');
+  const searchInput = document.getElementById('c-search-input');
 
   function fetchWithTimeout(url, ms = 8000) {
     return Promise.race([
@@ -141,17 +172,17 @@ body { margin: 0; background: transparent; }
       const html = names.map(n => {
         const safe = document.createElement('div');
         safe.textContent = n;
-        return `<div class="c-item">${safe.innerHTML}</div>`;
+        return `<div class="c-item" data-name="${safe.textContent.toLowerCase()}">${safe.innerHTML}</div>`;
       }).join('');
       
-      // Duplicate for seamless looping
-      list.innerHTML = html + html;
+      list.innerHTML = html;
 
       badge.textContent = names.length.toLocaleString() + " INDEXED";
       status.style.display = 'none';
       list.style.display = 'flex';
+      searchBox.style.display = 'block';
 
-      startAutoScroll();
+      setupSearch();
 
     } catch (e) {
       status.innerHTML = "Database Offline<br><small>" + e.message + "</small>";
@@ -162,41 +193,20 @@ body { margin: 0; background: transparent; }
     }
   }
 
-  function startAutoScroll() {
-    let scrollSpeed = 0.8; // pixels per frame
-    let isPaused = false;
-    let rafId = null;
-
-    function scrollStep() {
-      if (!isPaused) {
-        box.scrollTop += scrollSpeed;
-        // When we reach the bottom of the first copy, snap to top instantly
-        if (box.scrollTop >= list.scrollHeight / 2) {
-          box.scrollTop = 0;
+  function setupSearch() {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim().toLowerCase();
+      const items = list.querySelectorAll('.c-item');
+      
+      items.forEach(item => {
+        const name = item.getAttribute('data-name');
+        if (name.includes(query)) {
+          item.classList.remove('hidden');
+        } else {
+          item.classList.add('hidden');
         }
-      }
-      rafId = requestAnimationFrame(scrollStep);
-    }
-
-    rafId = requestAnimationFrame(scrollStep);
-
-    // Pause on mouse enter / touch start
-    box.addEventListener('mouseenter', () => { isPaused = true; });
-    box.addEventListener('touchstart', () => { isPaused = true; }, { passive: true });
-
-    // Resume on mouse leave
-    box.addEventListener('mouseleave', () => { isPaused = false; });
-    box.addEventListener('touchend', () => { isPaused = false; });
-
-    // Also pause while user is actively scrolling with wheel/trackpad
-    let scrollTimeout;
-    box.addEventListener('scroll', () => {
-      isPaused = true;
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        isPaused = false;
-      }, 1500); // resume 1.5s after last scroll
-    }, { passive: true });
+      });
+    });
   }
 
   init();
