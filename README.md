@@ -15,6 +15,7 @@ The widget is embedded on Carrd and displays the full creator database with live
 ---
 
 ## 📁 Repository Structure
+```
 fbhusernames/
 ├── database.json                  # The live creator index
 ├── widget.html                    # Standalone widget (hosted via GitHub Pages)
@@ -26,6 +27,7 @@ fbhusernames/
 │   └── scripts/
 │       ├── process_exports.py     # Python: extracts & cleans creator names
 │       └── scrape_cache.json      # Cache for scraped URLs (YouTube, Instagram, etc.)
+```
 
 ---
 
