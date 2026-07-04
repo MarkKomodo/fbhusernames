@@ -18,38 +18,26 @@ BLOCKLIST = {
     "furryburps", "furryburpschat",
 }
 
-def log(msg):
-    print(msg, flush=True)
-
 def load_db():
-    log(f"[DB] Loading {DB_PATH}...")
     try:
         with open(DB_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            log(f"[DB] Loaded. Current creators: {len(data.get('creators', []))}")
-            return data
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        log(f"[DB] Failed to load ({e}). Starting fresh.")
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
         return {"last_updated": "", "creators": []}
 
 def save_db(data):
-    log(f"[DB] Saving {len(data.get('creators', []))} creators to {DB_PATH}")
     data["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(DB_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")
-    log("[DB] Save complete.")
 
 def load_cache():
     if os.path.exists(CACHE_PATH):
-        log(f"[CACHE] Loading from {CACHE_PATH}")
         with open(CACHE_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
-    log("[CACHE] No cache file found.")
     return {}
 
 def save_cache(cache):
-    log(f"[CACHE] Saving {len(cache)} entries to {CACHE_PATH}")
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
     with open(CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(cache, f, indent=2, ensure_ascii=False)
@@ -69,28 +57,21 @@ def extract_text_from_message(msg):
 
 def extract_urls_and_mentions(text):
     found = []
-    # Raw URLs
-    raw_urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]()]+', text)
-    for url in raw_urls:
-        url = url.rstrip('.,;:!?>\'\"')
+    for m in re.finditer(r'https?://[^\s<>"{}|\\^`\[\]()]+', text):
+        url = m.group(0).rstrip('.,;:!?>\'\"')
         found.append(("url", url))
-    # Markdown links
-    md_links = re.findall(r'\[([^\]]*)\]\(([^)]+)\)', text)
-    for _, url in md_links:
-        url = url.strip()
+    for m in re.finditer(r'\[([^\]]*)\]\(([^)]+)\)', text):
+        url = m.group(2).strip()
         if url.startswith("http"):
             url = url.rstrip('.,;:!?>\'\"')
             found.append(("url", url))
-    # @mentions
-    mentions = re.findall(r'@([a-zA-Z0-9_.]+)', text)
-    for m in mentions:
-        found.append(("mention", m))
+    for m in re.finditer(r'@([a-zA-Z0-9_.]+)', text):
+        found.append(("mention", m.group(1)))
     return found
 
 def clean_name(name):
     if not name:
         return None
-    original = name
     name = name.strip()
     if name.startswith("@"):
         name = name[1:]
@@ -99,15 +80,13 @@ def clean_name(name):
         if name.lower().endswith(suffix):
             name = name[:-len(suffix)]
     if name.startswith("did:plc:"):
-        log(f"  [CLEAN] Rejected '{original}': Bluesky DID")
         return None
-    stripped = name.lower().rstrip('.,;:!?)')
-    if stripped in BLOCKLIST:
-        log(f"  [CLEAN] Rejected '{original}': blocklisted community name")
+    if name.lower().rstrip('.,;:!?)') in BLOCKLIST:
+        return None
+    if name.startswith("__"):
         return None
     name = name.strip('/@#_')
     if len(name) < 2 or len(name) > 40:
-        log(f"  [CLEAN] Rejected '{original}': length {len(name)}")
         return None
     return name
 
@@ -115,103 +94,113 @@ def extract_from_url(url):
     parsed = urlparse(url)
     domain = parsed.netloc.lower()
     path = unquote(parsed.path)
-    query = parsed.query  # logged but not used
 
     if domain.startswith("www."):
         domain = domain[4:]
 
-    log(f"  [URL] domain={domain} path={path} query_present={bool(query)}")
-
-    if domain in ("t.me", "telegram.me"):
-        log(f"  [URL] Skipping Telegram link")
+    # Skip Telegram and MEGA
+    if domain in ("t.me", "telegram.me", "mega.nz"):
         return None
 
+    # Bluesky + alts (psky)
     if domain in ("bsky.app", "bskye.app", "bskyx.app", "cbsky.app",
-                  "fxbsky.app", "vxbsky.app", "xbsky.app"):
+                  "fxbsky.app", "vxbsky.app", "xbsky.app", "psky.app"):
         m = re.search(r'/profile/([^/?#]+)', path)
         if m:
-            log(f"  [URL] Bluesky profile: {m.group(1)}")
             return clean_name(m.group(1))
-        log(f"  [URL] Bluesky URL but no /profile/ match")
         return None
 
+    # Twitter/X + alts
     if domain in ("twitter.com", "x.com", "nitter.net",
                   "fixupx.com", "fixvx.com", "fxtwitter.com", "girlcockx.com",
                   "mpregx.com", "pxtwitter.com", "stupidpenisx.com",
                   "twittpr.com", "vxtwitter.com", "xcancel.com"):
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] not in ("i", "home", "search", "explore", "intent"):
-            log(f"  [URL] Twitter/X username from path: {parts[0]}")
             return clean_name(parts[0])
-        log(f"  [URL] Twitter/X URL but no valid username in path")
         return None
 
+    # TikTok + alts
     if domain in ("tiktok.com", "tiktokez.com", "tiktxk.com", "tnktok.com",
                   "vm.tfxktok.com", "vm.tiktokez.com", "vm.tiktok.com",
-                  "www.tnktok.com"):
+                  "www.tnktok.com", "vxtiktok.com", "tfxktok.com"):
         m = re.search(r'/@([^/?#]+)', path)
         if m:
-            log(f"  [URL] TikTok username: {m.group(1)}")
             return clean_name(m.group(1))
         if domain.startswith("vm."):
-            log(f"  [URL] TikTok shortlink, will scrape")
             return scrape_with_cache(url, "tiktok_vm")
         parts = [p for p in path.split("/") if p]
         if parts and parts[0].startswith('@'):
-            log(f"  [URL] TikTok username: {parts[0][1:]}")
             return clean_name(parts[0][1:])
-        log(f"  [URL] TikTok URL but no username found")
         return None
 
+    # Twitch — skip VODs (/videos/), keep clips and channels
+    if domain in ("twitch.tv", "clips.twitch.tv", "www.twitch.tv"):
+        parts = [p for p in path.split("/") if p]
+        if not parts:
+            return None
+        # Skip VOD links: twitch.tv/videos/123456
+        if parts[0] == 'videos':
+            return None
+        # Clips: clips.twitch.tv/ClipName or twitch.tv/clip/ClipName
+        if parts[0] == 'clip' and len(parts) >= 2:
+            return None  # Clip names are not creator names
+        # Channel names: twitch.tv/Username
+        if parts[0] not in ('directory', 'search', 'settings', 'login', 'videos', 'clip', 'clips'):
+            return clean_name(parts[0])
+        return None
+
+    # DeviantArt
+    if domain in ("deviantart.com", "www.deviantart.com"):
+        parts = [p for p in path.split("/") if p]
+        if not parts:
+            return None
+        # Skip /art/ and /journal/ post URLs
+        if parts[0] in ('art', 'journal', 'browse', 'search', 'groups', 'shop', 'prints'):
+            return None
+        # Username is first path segment
+        return clean_name(parts[0])
+
+    # YouTube + alts
     if domain in ("youtube.com", "youtu.be", "koutube.com"):
-        log(f"  [URL] YouTube link, will scrape")
         return scrape_with_cache(url, "youtube")
 
+    # Instagram + alts
     if domain in ("instagram.com", "ddinstagram.com", "eeinstagram.com",
                   "kkinstagram.com"):
         parts = [p for p in path.split("/") if p]
         if not parts:
-            log(f"  [URL] Instagram empty path")
             return None
         if parts[0] in ('p', 'reel', 'tv', 'explore', 'accounts'):
-            log(f"  [URL] Instagram post/reel, will scrape")
             return scrape_with_cache(url, "instagram")
         if parts[0] == 'stories' and len(parts) >= 2:
-            log(f"  [URL] Instagram story user: {parts[1]}")
             return clean_name(parts[1])
         if len(parts) == 1:
-            log(f"  [URL] Instagram profile: {parts[0]}")
             return clean_name(parts[0])
-        log(f"  [URL] Instagram fallback scrape")
         return scrape_with_cache(url, "instagram")
 
+    # FurAffinity + alts (vxfuraffinity, fxfuraffinity)
     if domain in ("furaffinity.net", "d.furaffinity.net", "fxfuraffinity.net",
-                  "fxrafinity.net", "xfuraffinity.net"):
+                  "fxrafinity.net", "xfuraffinity.net", "vxfuraffinity.net"):
         parts = [p for p in path.split("/") if p]
         if len(parts) >= 2 and parts[0] == 'user':
-            log(f"  [URL] FA user: {parts[1]}")
             return clean_name(parts[1])
         if '/view/' in path:
-            log(f"  [URL] FA submission, will scrape")
             return scrape_with_cache(url, "furaffinity")
-        log(f"  [URL] FA URL but no user/view match")
         return None
 
+    # Facebook + alts
     if domain in ("facebook.com", "facebed.com"):
-        log(f"  [URL] Facebook link, will scrape")
         return scrape_with_cache(url, "facebook")
 
-    log(f"  [URL] Unrecognized domain, skipping")
     return None
 
 def scrape_with_cache(url, platform):
     cache = load_cache()
     if url in cache:
         val = cache[url]
-        log(f"  [SCRAPE] Cache hit for {platform}: {val}")
         return clean_name(val) if val else None
 
-    log(f"  [SCRAPE] Fetching {platform}: {url}")
     result = None
     try:
         if platform == "youtube":
@@ -225,9 +214,8 @@ def scrape_with_cache(url, platform):
         elif platform == "tiktok_vm":
             result = scrape_tiktok_vm(url)
     except Exception as e:
-        log(f"  [SCRAPE] ERROR ({platform}): {e}")
+        print(f"Scrape error ({platform}): {e}")
 
-    log(f"  [SCRAPE] Result for {platform}: {result}")
     cache[url] = result
     save_cache(cache)
     return clean_name(result) if result else None
@@ -298,53 +286,41 @@ def scrape_tiktok_vm(url):
     return None
 
 def merge_creators(existing, new_names):
-    log(f"[MERGE] Merging {len(existing)} existing + {len(new_names)} new")
     best = {}
     for name in existing + new_names:
         key = name.lower()
         current = best.get(key, "")
         if sum(1 for c in name if c.isupper()) > sum(1 for c in current if c.isupper()):
             best[key] = name
-    result = sorted(best.values(), key=str.lower)
-    log(f"[MERGE] Result: {len(result)} unique creators")
-    return result
+    return sorted(best.values(), key=str.lower)
 
 def main():
-    log("=" * 60)
-    log("STARTING TELEGRAM EXPORT PROCESSOR")
-    log("=" * 60)
-
     db = load_db()
     existing = db.get("creators", [])
     extracted = set()
     processed_files = []
 
     if not os.path.exists(EXPORTS_DIR):
-        log(f"[ERROR] Exports directory '{EXPORTS_DIR}' not found!")
+        print("No exports folder found.")
         return
 
-    files = sorted([f for f in os.listdir(EXPORTS_DIR) if f.endswith('.json')])
-    log(f"[FILES] Found {len(files)} JSON file(s): {files}")
-
+    files = [f for f in os.listdir(EXPORTS_DIR) if f.endswith('.json')]
     if not files:
-        log("[WARN] No JSON files to process. Exiting.")
+        print("No JSON files to process.")
         return
 
     for filename in files:
         filepath = os.path.join(EXPORTS_DIR, filename)
-        log(f"\n{'='*40}")
-        log(f"[FILE] Processing: {filename}")
-        log(f"{'='*40}")
+        print(f"Processing {filename}...")
         
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-        except json.JSONDecodeError as e:
-            log(f"[ERROR] Invalid JSON in {filename}: {e}")
+        except json.JSONDecodeError:
+            print(f"  Skipping {filename}: invalid JSON")
             continue
 
         messages = data.get("messages", [])
-        log(f"[FILE] Total messages in file: {len(messages)}")
         count = 0
         
         for msg in messages:
@@ -355,53 +331,32 @@ def main():
             if not text.strip():
                 continue
             
-            items = extract_urls_and_mentions(text)
-            if items:
-                log(f"\n  [MSG] Found {len(items)} item(s): {items}")
-            
-            for kind, value in items:
+            for kind, value in extract_urls_and_mentions(text):
                 if kind == "mention":
-                    log(f"  [MENTION] Raw: @{value}")
                     cleaned = clean_name(value)
                     if cleaned:
-                        log(f"  [MENTION] ACCEPTED: {cleaned}")
                         extracted.add(cleaned)
-                    else:
-                        log(f"  [MENTION] REJECTED")
                 elif kind == "url":
-                    log(f"  [LINK] URL: {value}")
                     cleaned = extract_from_url(value)
                     if cleaned:
-                        log(f"  [LINK] ACCEPTED: {cleaned}")
                         extracted.add(cleaned)
-                    else:
-                        log(f"  [LINK] REJECTED")
             
             count += 1
         
-        log(f"[FILE] Scanned {count} text messages")
+        print(f"  Scanned {count} messages")
         processed_files.append(filepath)
 
-    log(f"\n{'='*60}")
-    log(f"[SUMMARY] Extracted {len(extracted)} unique candidates:")
-    for name in sorted(extracted):
-        log(f"  - {name}")
-    log(f"{'='*60}")
+    print(f"Extracted {len(extracted)} new candidates")
 
     merged = merge_creators(existing, list(extracted))
-    log(f"[FINAL] Total creators in database: {len(merged)}")
+    print(f"Total after merge: {len(merged)}")
 
     db["creators"] = merged
     save_db(db)
 
-    log(f"\n[CLEANUP] Deleting {len(processed_files)} processed file(s)...")
     for filepath in processed_files:
         os.remove(filepath)
-        log(f"  Deleted: {os.path.basename(filepath)}")
-
-    log("\n" + "=" * 60)
-    log("PROCESSING COMPLETE")
-    log("=" * 60)
+        print(f"Deleted {os.path.basename(filepath)}")
 
 if __name__ == "__main__":
     main()
