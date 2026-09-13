@@ -139,7 +139,7 @@ def extract_from_url(url):
                   "mpregx.com", "pxtwitter.com", "stupidpenisx.com",
                   "twittpr.com", "vxtwitter.com", "xcancel.com"):
         parts = [p for p in path.split("/") if p]
-        if parts and parts[0] not in ("i", "home", "search", "explore", "intent"):
+        if parts and parts[0] not in ("i", "home", "search", "explore", "intent", "status", "hashtag"):
             log(f"  [URL] Twitter/X user: {parts[0]}")
             return clean_name(parts[0])
         log(f"  [URL] Twitter/X but no valid user")
@@ -182,7 +182,7 @@ def extract_from_url(url):
         parts = [p for p in path.split("/") if p]
         if not parts:
             return None
-        if parts[0] in ('art', 'journal', 'browse', 'search', 'groups', 'shop', 'prints'):
+        if parts[0] in ('art', 'journal', 'browse', 'search', 'groups', 'shop', 'prints', 'tag', 'tags'):
             log(f"  [URL] DeviantArt post page skipped")
             return None
         log(f"  [URL] DeviantArt user: {parts[0]}")
@@ -326,9 +326,11 @@ def merge_creators(existing, new_names):
     best = {}
     for name in existing + new_names:
         key = name.lower()
-        current = best.get(key, "")
-        if sum(1 for c in name if c.isupper()) > sum(1 for c in current if c.isupper()):
+        if key not in best:
             best[key] = name
+        else:
+            if sum(1 for c in name if c.isupper()) > sum(1 for c in best[key] if c.isupper()):
+                best[key] = name
     result = sorted(best.values(), key=str.lower)
     log(f"[MERGE] Result: {len(result)} unique creators")
     return result
