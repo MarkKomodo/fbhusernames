@@ -65,13 +65,20 @@ def main():
         else:
             removed.append(name)
 
-    # Deduplicate preserving most-uppercase version
+def merge_creators(existing, new_names):
+    log(f"[MERGE] Merging {len(existing)} existing + {len(new_names)} new")
     best = {}
-    for name in cleaned:
+    for name in existing + new_names:
         key = name.lower()
-        current = best.get(key, "")
-        if sum(1 for x in name if x.isupper()) > sum(1 for x in current if x.isupper()):
+        if key not in best:
             best[key] = name
+        else:
+            # Keep whichever version has more uppercase letters for proper display
+            if sum(1 for c in name if c.isupper()) > sum(1 for c in best[key] if c.isupper()):
+                best[key] = name
+    result = sorted(best.values(), key=str.lower)
+    log(f"[MERGE] Result: {len(result)} unique creators")
+    return result
 
     db["creators"] = sorted(best.values(), key=str.lower)
 
