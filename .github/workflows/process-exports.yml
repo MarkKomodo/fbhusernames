@@ -65,6 +65,12 @@ jobs:
           echo "=== CREATOR COUNT ==="
           python -c "import json; d=json.load(open('database.json')); print(f'Total creators: {len(d.get(\"creators\", []))}')"
           
+      - name: Extract accepted creators from logs
+        run: |
+          echo "=== ACCEPTED CREATORS (from this run) ==="
+          python .github/scripts/process_exports.py 2>&1 | grep "ACCEPTED:" | sed 's/.*ACCEPTED: //' | sort -u
+          echo "========================="
+          
       - name: Commit and push
         run: |
           echo "=== GIT STATUS ==="
